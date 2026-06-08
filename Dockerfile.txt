@@ -1,0 +1,8 @@
+FROM eclipse-temurin:21
+WORKDIR /app
+COPY server/GoMokuServer.java .
+COPY assets/ assets/
+COPY GoMoku.html .
+RUN javac GoMokuServer.java
+EXPOSE 8888
+CMD ["java", "GoMokuServer"]

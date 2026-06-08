@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Internet GoMoku</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body {
+  background:#d4c9a8; font-family:Arial,sans-serif;
+  display:flex; flex-direction:column; align-items:center; padding:30px 16px;
+}
+h1 { font-size:1.4rem; margin-bottom:18px; color:#222; }
+#setup {
+  background:#fff; border:2px solid #888; border-radius:8px;
+  padding:24px 32px; display:flex; flex-direction:column;
+  gap:12px; align-items:center; min-width:300px;
+}
+#setup h2 { font-size:1rem; color:#333; }
+.field { display:flex; gap:10px; align-items:center; width:100%; }
+.field label { width:80px; font-size:.9rem; }
+.field input { flex:1; padding:7px 10px; border:1px solid #ccc; border-radius:4px; font-size:.95rem; }
+#statusMsg { font-size:.85rem; color:#b00; min-height:1.1em; text-align:center; }
+#startBtn {
+  padding:9px 30px; background:#2c6e2c; color:#fff;
+  border:none; border-radius:5px; font-size:1rem; cursor:pointer;
+}
+#startBtn:disabled { background:#888; cursor:default; }
+
+#game { display:none; flex-direction:column; align-items:center; }
+#header-bar {
+  display:grid; grid-template-columns:100px 130px 100px 130px;
+  border:2px solid #333; border-bottom:none; background:#fff; width:460px;
+}
+#header-bar div {
+  padding:5px 8px; font-size:.88rem; border-right:1px solid #555; text-align:center;
+}
+#header-bar div:last-child { border-right:none; }
+.lbl { color:#555; }
+.nm  { font-weight:bold; color:#000; }
+#result-bar {
+  width:460px; border:2px solid #333; border-bottom:none;
+  background:#fff; padding:4px 10px; font-size:.9rem;
+  font-weight:bold; text-align:center; min-height:26px;
+}
+#board { display:block; border:2px solid #333; cursor:crosshair; }
+#turn-bar {
+  width:460px; background:#fff; border:2px solid #333; border-top:none;
+  padding:5px 10px; font-size:.85rem; text-align:center; min-height:28px;
+}
+#playAgainBtn {
+  display:none; margin-top:12px;
+  padding:9px 30px; background:#2c6e2c; color:#fff;
+  border:none; border-radius:5px; font-size:1rem; cursor:pointer;
+}
+#playAgainBtn:hover { background:#245224; }
+</style>
+</head>
+<body>
+<h1>Internet GoMoku (Connect-5)</h1>
+
+<div id="setup">
+  <h2>Enter player names</h2>
+  <div class="field">
+    <label>Player 1</label>
+    <input id="n1" type="text" value="Player1" maxlength="16">
+  </div>
+  <div class="field">
+    <label>Player 2</label>
+    <input id="n2" type="text" value="Player2" maxlength="16">
+  </div>
+  <div id="statusMsg">Ready</div>
+  <button id="startBtn" onclick="startGame()">Connect &amp; Start</button>
+</div>
+
+<div id="game">
+  <div id="header-bar">
+    <div class="lbl">Player 1</div><div class="nm" id="hn1">-</div>
+    <div class="lbl">Player 2</div><div class="nm" id="hn2">-</div>
+  </div>
+  <div id="result-bar" id="rb">&nbsp;</div>
+  <canvas id="board" width="460" height="460"></canvas>
+  <div id="turn-bar" id="tb">-</div>
+  <button id="playAgainBtn" onclick="playAgain()">Play Again</button>
+</div>
+
+<script>
+var CELL = 46, SIZE = 10;
+var imgBg    = new Image(); imgBg.src    = "assets/background.gif";
+var imgBlack = new Image(); imgBlack.src = "assets/blackStone.gif";
+var imgWhite = new Image(); imgWhite.src = "assets/whiteStone.gif";
+var board, p1n, p2n, p1col, p2col, turnCol, over;
+var ws1, ws2, readyCount, startCount;
+var winCells = []; // stores [{r,c}] of the winning 5 cells
+
+function log(msg) { console.log(msg); }
+
+function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
+function setResult(msg) { document.getElementById('result-bar').textContent = msg || '\u00a0'; }
+function setTurn(msg)   { document.getElementById('turn-bar').textContent = msg; }
+
+function makeBoard() {
+  var b = [];
+  for (var i=0;i<SIZE;i++){b.push([]); for(var j=0;j<SIZE;j++) b[i].push(0);}
+  return b;
+}
+
+function startGame() {
+  p1n = document.getElementById('n1').value.trim();
+  p2n = document.getElementById('n2').value.trim();
+
+  if (!p1n && !p2n) { setStatus('Enter your name before connecting'); return; }
+  if (!p1n) { setStatus('Enter Player 1 name before connecting'); return; }
+  if (!p2n) { setStatus('Enter Player 2 name before connecting'); return; }
+
+  board      = makeBoard();
+  over       = false;
+  winCells   = [];
+  readyCount = 0;
+  startCount = 0;
+  p1col = 0; p2col = 0; turnCol = 0;
+
+  document.getElementById('startBtn').disabled = true;
+  setStatus('Opening connections...');
+
+  var protocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  var host = location.host || 'localhost:8888';
+  var url = protocol + host;
+
+  ws1 = openWS(url, 1, p1n);
+  ws2 = openWS(url, 2, p2n);
+}
+
+function openWS(url, num, name) {
+  var ws = new WebSocket(url);
+
+  ws.onopen = function() {
+    log('WS' + num + ' open, sending NAME ' + name);
+    ws.send('NAME ' + name);
+    readyCount++;
+    setStatus('Connected ' + readyCount + '/2...');
+  };
+
+  ws.onmessage = function(e) {
+    log('WS' + num + ' msg: ' + e.data);
+    onMessage(num, e.data.trim());
+  };
+
+  ws.onerror = function(err) {
+    log('WS' + num + ' ERROR');
+    setStatus('ERROR: Server not reachable. Is 2_start_server.bat running on port 8888?');
+    document.getElementById('startBtn').disabled = false;
+  };
+
+  ws.onclose = function(e) {
+    log('WS' + num + ' closed code=' + e.code);
+  };
+
+  return ws;
+}
+
+function onMessage(num, msg) {
+  if (msg === 'WAIT') {
+    log('P' + num + ' told to wait');
+    return;
+  }
+
+  if (msg.substring(0,5) === 'START') {
+    var parts = msg.split(' ');
+    var col   = (parts[1] === 'BLACK') ? 1 : 2;
+    if (num === 1) p1col = col; else p2col = col;
+    startCount++;
+    log('START received ' + startCount + '/2');
+
+    if (startCount === 2) {
+      turnCol = 1; // black always first
+      document.getElementById('hn1').textContent = p1n;
+      document.getElementById('hn2').textContent = p2n;
+      document.getElementById('setup').style.display = 'none';
+      document.getElementById('game').style.display  = 'flex';
+      setResult('');
+      setTurn(p1n + ' (Black) goes first - click a cell');
+      drawBoard();
+    }
+    return;
+  }
+
+  if (msg.substring(0,4) === 'MOVE') {
+    var parts = msg.split(' ');
+    var r = parseInt(parts[1]);
+    var c = parseInt(parts[2]);
+    var col = parseInt(parts[3]);
+    board[r][c] = col;
+    turnCol = (col === 1) ? 2 : 1;
+    drawBoard();
+    var nn = (turnCol === 1) ? p1n : p2n;
+    var st = (turnCol === 1) ? 'Black' : 'White';
+    setTurn(nn + ' (' + st + ') - your turn');
+    return;
+  }
+
+  if (msg.substring(0,3) === 'WIN') {
+    over = true;
+    winCells = findWinCells();
+    drawBoard();
+    setResult(msg.substring(4).trim() + ' Won!');
+    setTurn('Game over!');
+    document.getElementById('playAgainBtn').style.display = 'inline-block';
+    return;
+  }
+
+  if (msg === 'DRAW') {
+    over = true;
+    drawBoard();
+    setResult('Draw!');
+    setTurn('Game over!');
+    document.getElementById('playAgainBtn').style.display = 'inline-block';
+    return;
+  }
+
+  if (msg.substring(0,5) === 'ERROR') {
+    setTurn('Invalid move - try again');
+    return;
+  }
+
+  if (msg === 'OPPONENT_QUIT') {
+    over = true;
+    setResult('A player disconnected.');
+    return;
+  }
+}
+
+document.getElementById('board').addEventListener('click', function(e) {
+  if (over || !ws1 || !ws2 || turnCol === 0) return;
+
+  var rect = this.getBoundingClientRect();
+  var sx = this.width / rect.width;
+  var sy = this.height / rect.height;
+  var col = Math.floor((e.clientX - rect.left) * sx / CELL);
+  var row = Math.floor((e.clientY - rect.top)  * sy / CELL);
+
+  if (row < 0 || row >= SIZE || col < 0 || col >= SIZE) return;
+  if (board[row][col] !== 0) return;
+
+  // Which WS sends this move?
+  var ws = (turnCol === p1col) ? ws1 : ws2;
+  if (ws.readyState !== WebSocket.OPEN) {
+    log('WS not open, state=' + ws.readyState);
+    return;
+  }
+
+  log('Click row=' + row + ' col=' + col + ' sending from P' + (ws===ws1?1:2));
+  ws.send('MOVE ' + row + ' ' + col);
+});
+
+// Find the 5 winning cells on the board
+function findWinCells() {
+  var dirs = [[0,1],[1,0],[1,1],[1,-1]];
+  for (var r=0; r<SIZE; r++) {
+    for (var c=0; c<SIZE; c++) {
+      var v = board[r][c];
+      if (!v) continue;
+      for (var d=0; d<dirs.length; d++) {
+        var dr=dirs[d][0], dc=dirs[d][1];
+        var cells = [{r:r,c:c}];
+        for (var k=1; k<5; k++) {
+          var nr=r+dr*k, nc=c+dc*k;
+          if (nr<0||nr>=SIZE||nc<0||nc>=SIZE||board[nr][nc]!==v) break;
+          cells.push({r:nr,c:nc});
+        }
+        if (cells.length === 5) return cells;
+      }
+    }
+  }
+  return [];
+}
+
+function drawBoard() {
+  var cv  = document.getElementById('board');
+  var ctx = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+
+  for (var r=0;r<SIZE;r++) {
+    for (var c=0;c<SIZE;c++) {
+      if (imgBg.complete && imgBg.naturalWidth > 0)
+        ctx.drawImage(imgBg, c*CELL, r*CELL, CELL, CELL);
+      else {
+        ctx.fillStyle='#c8a96a';
+        ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+      }
+    }
+  }
+
+  ctx.strokeStyle='#555'; ctx.lineWidth=1;
+  for (var i=0;i<=SIZE;i++) {
+    ctx.beginPath(); ctx.moveTo(i*CELL,0); ctx.lineTo(i*CELL,H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*CELL); ctx.lineTo(W,i*CELL); ctx.stroke();
+  }
+
+  // Build a quick lookup of winning cells
+  var winMap = {};
+  for (var w=0; w<winCells.length; w++) {
+    winMap[winCells[w].r + ',' + winCells[w].c] = true;
+  }
+
+  for (var r=0;r<SIZE;r++) {
+    for (var c=0;c<SIZE;c++) {
+      var v = board[r][c]; if (!v) continue;
+      var img = (v===1) ? imgBlack : imgWhite;
+      var x=c*CELL+2, y=r*CELL+2, sz=CELL-4;
+
+      // Highlight winning cells with a bright green background
+      if (winMap[r + ',' + c]) {
+        ctx.fillStyle = 'rgba(0, 220, 0, 0.85)';
+        ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+        // Redraw grid lines over highlight
+        ctx.strokeStyle='#555'; ctx.lineWidth=1;
+        ctx.strokeRect(c*CELL, r*CELL, CELL, CELL);
+      }
+
+      if (img.complete && img.naturalWidth > 0) {
+        ctx.drawImage(img, x, y, sz, sz);
+      } else {
+        ctx.fillStyle = (v===1) ? '#111' : '#f5f0e0';
+        ctx.beginPath(); ctx.arc(x+sz/2,y+sz/2,sz/2,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#888'; ctx.lineWidth=1; ctx.stroke();
+      }
+    }
+  }
+}
+
+imgBg.onload    = drawBoard;
+imgBlack.onload = drawBoard;
+imgWhite.onload = drawBoard;
+drawBoard();
+
+function playAgain() {
+  // Close existing connections
+  if (ws1) { try { ws1.close(); } catch(e){} }
+  if (ws2) { try { ws2.close(); } catch(e){} }
+  ws1 = null; ws2 = null;
+
+  // Hide game, show setup
+  document.getElementById('game').style.display  = 'none';
+  document.getElementById('setup').style.display = 'flex';
+  document.getElementById('playAgainBtn').style.display = 'none';
+
+  // Re-enable inputs
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('n1').disabled = false;
+  document.getElementById('n2').disabled = false;
+
+  setStatus('Ready');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+{
+  "deploy": {
+    "startCommand": "java GoMokuServer 8080",
+    "healthcheckPath": "/"
+  }
+}
