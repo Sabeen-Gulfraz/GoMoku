@@ -1,8 +1,6 @@
-FROM eclipse-temurin:21
+FROM eclipse-temurin:21-jdk
 WORKDIR /app
-COPY server/GoMokuServer.java .
-COPY assets/ assets/
-COPY GoMoku.html .
-RUN javac GoMokuServer.java
+COPY . .
+RUN javac server/GoMokuServer.java -d .
 EXPOSE 8888
-CMD ["java", "GoMokuServer"]
+CMD ["sh", "-c", "java GoMokuServer ${PORT:-8888}"]
