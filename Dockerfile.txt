@@ -4,3 +4,5 @@ COPY . .
 RUN javac server/GoMokuServer.java -d .
 EXPOSE 8888
 CMD ["sh", "-c", "java GoMokuServer ${PORT:-8888}"]
+
+
