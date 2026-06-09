@@ -1,6 +1,6 @@
 {
   "deploy": {
-    "startCommand": "java GoMokuServer 8080",
+    "startCommand": "java GoMokuServer $PORT",
     "healthcheckPath": "/"
   }
 }
