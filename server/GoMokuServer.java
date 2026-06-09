@@ -23,23 +23,21 @@ public class GoMokuServer {
     }
 
     static void handleClient(Socket sock) {
-        try {
-            InputStream is = sock.getInputStream();
-            // Peek at first byte to decide HTTP vs WebSocket
-            byte[] peek = new byte[4];
-            is.mark(4);
-            int read = is.read(peek, 0, 4);
-            is.reset();
-
-            String start = new String(peek, 0, read, "UTF-8");
-            if (start.startsWith("GET") || start.startsWith("POST") || start.startsWith("HEAD")) {
-                handleHTTP(sock, is);
-            }
-        } catch (Exception e) {
-            System.err.println("handleClient error: " + e.getMessage());
-            try { sock.close(); } catch (IOException ignored) {}
+    try {
+        BufferedInputStream bis = new BufferedInputStream(sock.getInputStream());
+        byte[] peek = new byte[4];
+        bis.mark(4);
+        int read = bis.read(peek, 0, 4);
+        bis.reset();
+        String start = new String(peek, 0, read, "UTF-8");
+        if (start.startsWith("GET") || start.startsWith("POST") || start.startsWith("HEAD")) {
+            handleHTTP(sock, bis);
         }
+    } catch (Exception e) {
+        System.err.println("handleClient error: " + e.getMessage());
+        try { sock.close(); } catch (IOException ignored) {}
     }
+}
 
     static void handleHTTP(Socket sock, InputStream is) throws Exception {
         // Read full HTTP request
